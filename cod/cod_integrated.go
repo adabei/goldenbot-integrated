@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-var status string
 var statusRegexp *regexp.Regexp = regexp.MustCompile("(?P<num>[0-9]+)" +
 	"\\s+(?P<score>-?[0-9]+)" +
 	"\\s+(?P<ping>[0-9]+)" +
@@ -22,32 +21,44 @@ var statusRegexp *regexp.Regexp = regexp.MustCompile("(?P<num>[0-9]+)" +
 
 type Integrated struct {
 	requests chan rcon.RCONQuery
+  events chan interface{}
+}
+
+func NewIntegrated(requests rcon.RCONQuery, ea events.Aggregator) *Integrated {
+  i := new(Integrated)
+  i.requests = requests
+  i.events = ea.Subscribe(v)
+  return i
+}
+
+func (i *Integrated) Setup() error {
+  return nil
 }
 
 func (i *Integrated) Start() {
-	for {
-		ch := make(chan []byte)
-		i.requests <- rcon.RCONQuery{Command: "status", Response: ch}
-		res := <-ch
-		status = string(res)
-		time.Sleep(10000 * time.Millisecond)
-	}
+  //select{}
 }
 
 func Num(id string) int {
-	players := strings.Split(status, "\n")
-	for _, p := range players {
-		sm := SubmatchMap(statusRegexp, statusRegexp.FindStringSubmatch(p))
-		if sm != nil {
-			if sm["guid"] == id {
-				num, err := strconv.Atoi(sm["num"])
-				if err != nil {
-					log.Fatal(err)
-				}
-				return num
-			}
-		}
-	}
+  ch := make(chan []byte)
+  i.requests <- rcon.RCONQuery{Command: "status", Response: ch}
+  res := <-ch
+  if res != nil {
+    status = string(res)
+    players := strings.Split(status, "\n")
+    for _, p := range players {
+      sm := SubmatchMap(statusRegexp, statusRegexp.FindStringSubmatch(p))
+      if sm != nil {
+        if sm["guid"] == id {
+          num, err := strconv.Atoi(sm["num"])
+          if err != nil {
+            log.Fatal(err)
+          }
+          return num
+        }
+      }
+    }
+  }
 
 	return -1
 }
