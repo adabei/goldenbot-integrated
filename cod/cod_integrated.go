@@ -36,18 +36,18 @@ func (i *Integrated) Start() {
 
 func Num(id string) int {
 	players := strings.Split(status, "\n")
-  for _, p := range players {
-    sm := SubmatchMap(statusRegexp, statusRegexp.FindStringSubmatch(p))
-    if sm != nil {
-      if sm["guid"] == id {
-        num, err := strconv.Atoi(sm["num"])
-        if err != nil {
-          log.Fatal(err)
-        }
-        return num
-      }
-    }
-  }
+	for _, p := range players {
+		sm := SubmatchMap(statusRegexp, statusRegexp.FindStringSubmatch(p))
+		if sm != nil {
+			if sm["guid"] == id {
+				num, err := strconv.Atoi(sm["num"])
+				if err != nil {
+					log.Fatal(err)
+				}
+				return num
+			}
+		}
+	}
 
 	return -1
 }
@@ -56,9 +56,9 @@ func Num(id string) int {
 // It returns nil if the regexp doesn't match.
 // TODO Refractor
 func SubmatchMap(re *regexp.Regexp, match []string) map[string]string {
-  if match == nil {
-    return nil
-  }
+	if match == nil {
+		return nil
+	}
 
 	m := make(map[string]string)
 	for i, v := range re.SubexpNames()[1:] {
