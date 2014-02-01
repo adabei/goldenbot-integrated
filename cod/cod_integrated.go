@@ -1,80 +1,120 @@
 package cod
 
 import (
+	"github.com/adabei/goldenbot/events"
+	"github.com/adabei/goldenbot/events/cod"
 	"github.com/adabei/goldenbot/rcon"
 	"log"
-	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
-var statusRegexp *regexp.Regexp = regexp.MustCompile("(?P<num>[0-9]+)" +
-	"\\s+(?P<score>-?[0-9]+)" +
-	"\\s+(?P<ping>[0-9]+)" +
-	"\\s+(?P<guid>[0-9a-f]+)" +
-	"\\s+(?P<name>.*)" +
-	"\\s+(?P<lastmsg>[0-9]+)" +
-	"\\s+(?P<address>(?:[0-9]{1,3}\\.){3}[0-9{1,3}:[0-9]{1,5})" +
-	"\\s*(?P<qport>[0-9]{1,5})" +
-	"\\s+(?P<rate>[0-9]+)")
+var players = make([]string, 1)
 
 type Integrated struct {
 	requests chan rcon.RCONQuery
-  events chan interface{}
+	events   chan interface{}
 }
 
-func NewIntegrated(requests rcon.RCONQuery, ea events.Aggregator) *Integrated {
-  i := new(Integrated)
-  i.requests = requests
-  i.events = ea.Subscribe(v)
-  return i
+func NewIntegrated(requests chan rcon.RCONQuery, ea events.Aggregator) *Integrated {
+	i := new(Integrated)
+	i.requests = requests
+	i.events = ea.Subscribe(i)
+	return i
 }
 
 func (i *Integrated) Setup() error {
-  return nil
+	return nil
 }
 
-func (i *Integrated) Start() {
-  //select{}
-}
-
-func Num(id string) int {
-  ch := make(chan []byte)
-  i.requests <- rcon.RCONQuery{Command: "status", Response: ch}
-  res := <-ch
-  if res != nil {
-    status = string(res)
-    players := strings.Split(status, "\n")
-    for _, p := range players {
-      sm := SubmatchMap(statusRegexp, statusRegexp.FindStringSubmatch(p))
-      if sm != nil {
-        if sm["guid"] == id {
-          num, err := strconv.Atoi(sm["num"])
-          if err != nil {
-            log.Fatal(err)
-          }
-          return num
-        }
-      }
-    }
-  }
-
+func (i *Integrated) maxClients() int {
+	maxch := make(chan []byte)
+	i.requests <- rcon.RCONQuery{Command: "serverinfo", Response: maxch}
+	res := <-maxch
+	for _, line := range strings.Split(string(res), "\n") {
+		if strings.HasPrefix(line, "sv_maxclients") {
+			max, err := strconv.Atoi(strings.Fields(line)[1])
+			if err != nil {
+				return -1
+			} else {
+				return max
+			}
+		}
+	}
 	return -1
 }
 
-// SubmatchMap returns a map of of named group matches.
-// It returns nil if the regexp doesn't match.
-// TODO Refractor
-func SubmatchMap(re *regexp.Regexp, match []string) map[string]string {
-	if match == nil {
-		return nil
+func (i *Integrated) Start() {
+	maxClients := i.maxClients()
+	for maxClients == -1 {
+		log.Println("integrated: failed to fetch sv_maxclients. Trying again.")
+		maxClients = i.maxClients()
+	}
+	players = make([]string, maxClients)
+
+	statusch := make(chan []byte)
+	i.requests <- rcon.RCONQuery{Command: "status", Response: statusch}
+	resp := <-statusch
+	if resp != nil {
+		for _, line := range strings.Split(string(resp), "\n")[4:] {
+			if line != "" {
+				p := strings.Fields(line)
+				num, err := strconv.Atoi(p[0])
+				if err != nil {
+					log.Println("integrated: could not parse status, num is no integer")
+					continue
+				}
+				players[num] = p[3]
+			}
+		}
 	}
 
-	m := make(map[string]string)
-	for i, v := range re.SubexpNames()[1:] {
-		m[v] = match[i+1]
+	for {
+		ev := <-i.events
+		switch ev := ev.(type) {
+		case cod.Join:
+			if num := firstFreeNum(players); num != -1 {
+				players[num] = ev.GUID
+				log.Println("integrated: guid", ev.GUID, "is assigned num", num)
+			} else {
+				log.Fatal("integrated: more players than originally possible on server")
+			}
+		case cod.Quit:
+			num, _ := Num(ev.GUID)
+			players[num] = ""
+		}
+	}
+}
+
+// Returns the first empty index.
+// The server should prevent joins if already full.
+func firstFreeNum(p []string) int {
+	for i, v := range p {
+		if v == "" {
+			return i
+		}
 	}
 
-	return m
+	// turns out it is full
+	return -1
+}
+
+// Num returns the num for a player.
+// If that player is not in our list we try to predict it.
+// If the server is full, -1 and false will be returned, as no num will match.
+func Num(id string) (int, bool) {
+	for i, v := range players {
+		if v == id {
+			return i, true
+		}
+	}
+
+	// guid not in our players list, predict it
+	num := firstFreeNum(players)
+	if num != -1 {
+		log.Println("integrated: predicting num", num, "for guid", id)
+		return num, true
+	}
+
+	return -1, false
 }
