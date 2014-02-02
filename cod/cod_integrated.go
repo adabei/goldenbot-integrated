@@ -73,20 +73,18 @@ func (i *Integrated) Start() {
 		ev := <-i.events
 		switch ev := ev.(type) {
 		case cod.Join:
-			if num := firstFreeNum(players); num != -1 {
-				players[num] = ev.GUID
-				log.Println("integrated: guid", ev.GUID, "is assigned num", num)
-			} else {
-				log.Fatal("integrated: more players than originally possible on server")
+			// do nothing if the GUID is already matched
+			if _, prev := num(ev.GUID); !prev {
+				if num := firstFreeNum(players); num != -1 {
+					players[num] = ev.GUID
+					log.Println("integrated: guid", ev.GUID, "is assigned num", num)
+				} else {
+					log.Fatal("integrated: more players than originally possible on server")
+				}
 			}
 		case cod.Quit:
 			num, _ := Num(ev.GUID)
 			players[num] = ""
-		// flush players list after every round
-		case cod.ExitLevel:
-			for i := range players {
-				players[i] = ""
-			}
 		}
 	}
 }
@@ -108,10 +106,8 @@ func firstFreeNum(p []string) int {
 // If that player is not in our list we try to predict it.
 // If the server is full, -1 and false will be returned, as no num will match.
 func Num(id string) (int, bool) {
-	for i, v := range players {
-		if v == id {
-			return i, true
-		}
+	if num, ok := num(id); ok {
+		return num, true
 	}
 
 	// guid not in our players list, predict it
@@ -119,6 +115,17 @@ func Num(id string) (int, bool) {
 	if num != -1 {
 		log.Println("integrated: predicting num", num, "for guid", id)
 		return num, true
+	}
+
+	return -1, false
+}
+
+// num returns the num and true only if the id could be looked up.
+func num(id string) (int, bool) {
+	for i, v := range players {
+		if v == id {
+			return i, true
+		}
 	}
 
 	return -1, false
