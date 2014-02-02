@@ -82,6 +82,11 @@ func (i *Integrated) Start() {
 		case cod.Quit:
 			num, _ := Num(ev.GUID)
 			players[num] = ""
+		// flush players list after every round
+		case cod.ExitLevel:
+			for i := range players {
+				players[i] = ""
+			}
 		}
 	}
 }
